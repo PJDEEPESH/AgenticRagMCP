@@ -1,5 +1,8 @@
 # Agentic RAG Chatbot — Multi-Format Document QA using Model Context Protocol (MCP)
+**Presentation** - [Click here](https://docs.google.com/presentation/d/1J74nwHso8BU1bjjyOsHPDL-hx5hX_UKr/edit?usp=sharing&ouid=107532975049972498907&rtpof=true&sd=true)
 
+
+**Video Demo** - [Click here](https://drive.google.com/file/d/1B-mahle-V1tVb0MiwF8FHfXPzwRoFmbK/view?usp=sharing)
 > **Coding Round Submission** — Agent-based RAG system with LangGraph orchestration, hybrid retrieval, Gemini Vision OCR, and RAGAS-inspired evaluation.
 
 ---
