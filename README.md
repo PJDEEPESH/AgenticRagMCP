@@ -54,7 +54,7 @@ Upload any document (PDF, PPTX, CSV, DOCX, XLSX, TXT, Markdown) and ask question
     │    Neon      │  │    Google Gemini API        │
     │  PostgreSQL  │  │  gemini-2.5-flash  (LLM)   │
     │  + pgvector  │  │  gemini-embedding-001       │
-    │              │  │  gemini-2.0-flash  (OCR)   │
+    │              │  │  gemini-2.5-flash  (OCR)   │
     └──────────────┘  └────────────────────────────┘
 ```
 
@@ -137,7 +137,7 @@ IngestionAgent    ──INGEST_RESULT───►  MCP Bus
 | Format | Parser | Strategy | Notes |
 |--------|--------|----------|-------|
 | PDF (digital) | pypdf | One chunk per page | Requires ≥80 alpha chars |
-| PDF (scanned) | PyMuPDF + Gemini Vision | Sliding window on OCR text | 200 DPI render → gemini-2.0-flash OCR |
+| PDF (scanned / table-heavy) | PyMuPDF + Gemini Vision | Sliding window on OCR text | 200 DPI render → gemini-2.5-flash OCR |
 | PPTX | python-pptx | One chunk per slide | Includes speaker notes |
 | DOCX | python-docx | Sliding window 600 chars / 80 overlap | Tables included |
 | XLSX | pandas | 15 rows per chunk, all sheets | Each sheet parsed separately |
@@ -153,7 +153,7 @@ Every chunk is tagged: `[source: filename | page 3]` so citations are accurate.
 | Layer | Technology |
 |-------|-----------|
 | LLM (answers + reranking + evaluation) | Google Gemini `gemini-2.5-flash` |
-| OCR (scanned PDFs) | Google Gemini `gemini-2.0-flash` Vision |
+| OCR (scanned + form PDFs) | Google Gemini `gemini-2.5-flash` Vision |
 | Embeddings | Google Gemini `gemini-embedding-001` (768-dim, L2-normalized) |
 | Vector database | Neon PostgreSQL + `pgvector` extension |
 | Agent orchestration | LangGraph `StateGraph` |
@@ -299,7 +299,7 @@ Meets the assignment requirement ("You can implement MCP using in-memory messagi
 
 ## Challenges Faced
 
-1. **Scanned PDF OCR** — pypdf extracts garbled text from scanned PDFs (text layer from scanner, not real text). Fixed by checking if extracted text has ≥80 alphabetic characters; if not, PyMuPDF renders the page as a PNG and Gemini Vision reads it.
+1. **Scanned PDF OCR** — pypdf only extracts footer/watermark text from form-based and scanned PDFs, missing the actual table content. Fixed by requiring ≥40 alphabetic characters AND ≥300 total characters from pypdf; pages that fail either check are rendered at 200 DPI by PyMuPDF and read by Gemini Vision OCR.
 
 2. **Gemini response truncation in evaluation** — `gemini-2.5-flash` uses internal thinking tokens. With low `max_output_tokens`, thinking consumed the budget and JSON was cut mid-way. Fixed by switching to a comma-separated number format (`0.9,0.8,0.75`) which needs only ~15 tokens.
 
@@ -350,7 +350,7 @@ EvaluationAgent  →  RAGAS library (faithfulness / relevancy / precision)
 |-----------|-------------|-------------|
 | LLM | Google Gemini `gemini-2.5-flash` | OpenAI `gpt-4o-mini` or Ollama `llama3.2` (free, local) |
 | Embeddings | Gemini `gemini-embedding-001` (768-dim) | `sentence-transformers` `all-MiniLM-L6-v2` (384-dim, runs locally) |
-| OCR | Gemini Vision `gemini-2.0-flash` | Docling (handles PDFs, scanned pages, tables natively) |
+| OCR | Gemini Vision `gemini-2.5-flash` | Docling (handles PDFs, scanned pages, tables natively) |
 | Vector Store | Neon PostgreSQL + pgvector (cloud) | ChromaDB (local, file-based, no cloud needed) |
 | Keyword Search | PostgreSQL `ts_rank` / tsvector (BM25-like) | `rank-bm25` library (`BM25Okapi`, pure Python) |
 | Reranker | Gemini re-orders top-K via prompt | `cross-encoder/ms-marco-MiniLM-L-6-v2` (local, HuggingFace) |
