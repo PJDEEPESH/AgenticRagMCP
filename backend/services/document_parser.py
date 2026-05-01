@@ -99,12 +99,12 @@ def parse_document(file_path: str, filename: str) -> List[str]:
 
             for page_num, page in enumerate(reader.pages, start=1):
                 text = page.extract_text() or ""
-                text = text.strip()
-                # Require at least 80 real alphabetic characters — garbled OCR layers
-                # from scanned PDFs often produce <80 chars of noise even though the
-                # page has real content. Those pages get Gemini Vision OCR instead.
+                # Strip NUL bytes immediately — PostgreSQL rejects them
+                text = text.replace("\x00", "").strip()
+                # Pages with fewer than 40 real alpha chars are treated as
+                # scanned / image-only and forwarded to Gemini Vision OCR.
                 alpha_chars = sum(1 for c in text if c.isalpha())
-                if text and alpha_chars >= 80:
+                if text and alpha_chars >= 40:
                     tagged = f"[source: {filename} | page {page_num}]\n{text}"
                     chunks.append(tagged)
                 else:

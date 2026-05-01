@@ -157,10 +157,60 @@
       </div>
     </div>
 
+    <!-- ── Mobile bottom tab bar ── -->
+    <nav class="mobile-tabbar" id="mobile-tabbar">
+      <button class="mobile-tabbar-btn" data-panel="docs" onclick="switchMobileTab('docs')">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+        </svg>
+        Docs
+      </button>
+      <button class="mobile-tabbar-btn active" data-panel="chat" onclick="switchMobileTab('chat')">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        Chat
+      </button>
+      <button class="mobile-tabbar-btn" data-panel="trace" onclick="switchMobileTab('trace')">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Trace
+      </button>
+    </nav>
+
     <script>
       const _s = document.createElement("script");
       _s.src = location.protocol === "file:" ? "app.js" : "/static/app.js";
       document.body.appendChild(_s);
+    </script>
+    <script>
+      // Mobile tab switching
+      function switchMobileTab(panel) {
+        if (window.innerWidth > 860) return;
+        // Update tab buttons
+        document.querySelectorAll(".mobile-tabbar-btn").forEach(b =>
+          b.classList.toggle("active", b.dataset.panel === panel)
+        );
+        // Show / hide panels
+        const leftPanel  = document.querySelector(".panel:first-of-type");
+        const chatMain   = document.querySelector("main");
+        const rightPanel = document.querySelector("aside.panel");
+        [leftPanel, chatMain, rightPanel].forEach(el => el && el.classList.remove("mobile-active"));
+        if (panel === "docs")  leftPanel  && leftPanel.classList.add("mobile-active");
+        if (panel === "chat")  chatMain   && chatMain.classList.add("mobile-active");
+        if (panel === "trace") rightPanel && rightPanel.classList.add("mobile-active");
+      }
+      // Set initial state on mobile
+      window.addEventListener("DOMContentLoaded", () => switchMobileTab("chat"));
+      window.addEventListener("resize", () => {
+        if (window.innerWidth > 860) {
+          // Reset all on desktop
+          document.querySelectorAll(".panel, main").forEach(el => el.classList.remove("mobile-active"));
+        } else {
+          switchMobileTab("chat");
+        }
+      });
     </script>
   </body>
 </html>

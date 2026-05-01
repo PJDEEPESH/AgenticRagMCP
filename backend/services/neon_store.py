@@ -157,6 +157,7 @@ class NeonVectorStore:
 
         async with neon_session() as session:
             for idx, (chunk_text, vec) in enumerate(zip(chunks, embeddings)):
+                chunk_text = chunk_text.replace("\x00", "")
                 vec_lit = self._vec_literal(vec)
                 try:
                     await session.execute(
