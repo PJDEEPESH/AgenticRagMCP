@@ -101,10 +101,12 @@ def parse_document(file_path: str, filename: str) -> List[str]:
                 text = page.extract_text() or ""
                 # Strip NUL bytes immediately — PostgreSQL rejects them
                 text = text.replace("\x00", "").strip()
-                # Pages with fewer than 40 real alpha chars are treated as
-                # scanned / image-only and forwarded to Gemini Vision OCR.
                 alpha_chars = sum(1 for c in text if c.isalpha())
-                if text and alpha_chars >= 40:
+                # Use pypdf text only if it is substantial (≥40 alpha chars AND
+                # ≥300 total chars). Short extractions usually mean pypdf only
+                # captured a footer/watermark and missed the real table content
+                # (e.g. government PDFs, form-based admit cards).
+                if text and alpha_chars >= 40 and len(text) >= 300:
                     tagged = f"[source: {filename} | page {page_num}]\n{text}"
                     chunks.append(tagged)
                 else:
