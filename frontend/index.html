@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agentic RAG · MCP</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="header">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <div class="brand-title">Agentic RAG</div>
+            <div class="brand-sub">Model Context Protocol Workspace</div>
+          </div>
+        </div>
+        <div id="header-stats">
+          <span class="badge badge-cyan">0 docs</span>
+          <span class="badge badge-green">0 chunks</span>
+        </div>
+      </header>
+
+      <div id="body">
+        <!-- Left panel: documents -->
+        <aside class="panel">
+          <div class="panel-header">
+            <span class="label">
+              <svg class="icon-inline" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              Documents
+            </span>
+          </div>
+          <div class="panel-body">
+            <div id="drop-zone" class="drop-zone">
+              <div class="drop-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+              </div>
+              <div class="title">Upload documents</div>
+              <div class="subtitle">Drag &amp; drop files here (multiple supported)</div>
+              <button type="button" id="browse-btn" class="btn btn-primary drop-cta">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+                Choose files
+              </button>
+              <div class="formats">PDF · PPTX · CSV · DOCX · TXT · MD · XLSX</div>
+            </div>
+            <input
+              type="file"
+              id="file-input"
+              accept=".pdf,.pptx,.csv,.docx,.txt,.md,.xlsx"
+              multiple
+              style="display: none"
+            />
+            <div
+              id="upload-status"
+              class="upload-status"
+              style="display: none"
+            ></div>
+            <div
+              id="upload-error"
+              class="error-msg"
+              style="display: none"
+            ></div>
+
+            <div class="section-label">Library</div>
+            <div id="doc-list" class="doc-list"></div>
+
+            <div class="panel-footer">
+              <button id="reset-btn" class="btn btn-danger" style="width: 100%">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                  <path d="M10 11v6"/>
+                  <path d="M14 11v6"/>
+                </svg>
+                Reset workspace
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Center panel: chat -->
+        <main class="panel">
+          <div class="panel-header">
+            <span class="label">
+              <svg class="icon-inline" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              Conversation
+            </span>
+            <span class="badge badge-violet" id="msg-count">0</span>
+          </div>
+          <div class="chat-messages" id="chat-messages"></div>
+          <div class="chat-input-bar">
+            <textarea
+              id="chat-input"
+              placeholder="Ask a question about your documents…"
+              rows="1"
+            ></textarea>
+            <button id="send-btn" class="btn btn-primary" disabled>
+              <span>Send</span>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          </div>
+        </main>
+
+        <!-- Right panel: MCP trace + RAG Health -->
+        <aside class="panel">
+          <div class="panel-header" style="flex-direction: column; gap: 8px; align-items: stretch; padding-bottom: 0;">
+            <div class="rtab-nav">
+              <button class="rtab-btn active" data-tab="trace">
+                <svg class="icon-inline" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                MCP Trace
+                <span class="badge badge-cyan" id="trace-count">0</span>
+              </button>
+              <button class="rtab-btn" data-tab="health">
+                <svg class="icon-inline" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                RAG Health
+              </button>
+            </div>
+          </div>
+          <div class="panel-body" id="trace-body">
+            <div id="trace-list"></div>
+          </div>
+          <div class="panel-body" id="health-body" style="display:none;">
+            <div id="health-panel"></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <script>
+      const _s = document.createElement("script");
+      _s.src = location.protocol === "file:" ? "app.js" : "/static/app.js";
+      document.body.appendChild(_s);
+    </script>
+  </body>
+</html>
