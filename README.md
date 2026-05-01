@@ -311,3 +311,183 @@ Meets the assignment requirement ("You can implement MCP using in-memory messagi
 - Support for image-heavy PDFs with multiple scanned pages
 - RAGAS score history chart over multiple queries
 - Authentication + multi-user session isolation
+
+---
+
+## Alternative Implementation Plan
+
+This section describes an alternative architecture for the same system using a different toolchain. It serves as a design comparison — the actual implementation uses the stack described above (Gemini + Neon + Vanilla JS).
+
+### Alternative Architecture
+
+```
+React Frontend (Vite + JSX)
+       ↕  REST + Server-Sent Events (SSE streaming)
+FastAPI Backend
+       ↕
+CoordinatorAgent  ←  LangGraph StateGraph
+       ↕  MCP messages
+┌─────────────────────────────────────────────────────┐
+│  IngestionAgent   →  RetrievalAgent  →  LLMAgent   │
+│        ↕                  ↕                          │
+│    Docling           ChromaDB                        │
+│  (PDF + OCR)      BM25 (rank-bm25)                  │
+│                   Cross-encoder Reranker             │
+└─────────────────────────────────────────────────────┘
+       ↕
+EvaluationAgent  →  RAGAS library (faithfulness / relevancy / precision)
+```
+
+### Alternative Tech Stack
+
+| Component | This Project | Alternative |
+|-----------|-------------|-------------|
+| LLM | Google Gemini `gemini-2.5-flash` | OpenAI `gpt-4o-mini` or Ollama `llama3.2` (free, local) |
+| Embeddings | Gemini `gemini-embedding-001` (768-dim) | `sentence-transformers` `all-MiniLM-L6-v2` (384-dim, runs locally) |
+| OCR | Gemini Vision `gemini-2.0-flash` | Docling (handles PDFs, scanned pages, tables natively) |
+| Vector Store | Neon PostgreSQL + pgvector (cloud) | ChromaDB (local, file-based, no cloud needed) |
+| Keyword Search | PostgreSQL `ts_rank` / tsvector (BM25-like) | `rank-bm25` library (`BM25Okapi`, pure Python) |
+| Reranker | Gemini re-orders top-K via prompt | `cross-encoder/ms-marco-MiniLM-L-6-v2` (local, HuggingFace) |
+| RAGAS Evaluation | Custom Gemini-judged scoring | `ragas` library + HuggingFace `datasets` |
+| Frontend | Vanilla HTML/CSS/JS (no build step) | React (Vite + JSX components) |
+| Deployment | FastAPI serves frontend via `StaticFiles` | Separate backend (port 8000) + frontend dev server (port 3000) |
+
+### Alternative Folder Structure
+
+```
+agentic-rag-chatbot/
+├── backend/
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── .env
+│   ├── mcp/
+│   │   └── message.py               ← MCPMessage Pydantic schema
+│   ├── agents/
+│   │   ├── coordinator.py           ← LangGraph StateGraph
+│   │   ├── ingestion_agent.py       ← Docling parser + chunker
+│   │   ├── retrieval_agent.py       ← Hybrid search + reranker
+│   │   ├── llm_response_agent.py    ← OpenAI / Ollama with streaming
+│   │   └── evaluation_agent.py      ← RAGAS library evaluation
+│   ├── parsers/
+│   │   └── document_parser.py       ← Docling + format routing
+│   └── retrieval/
+│       ├── embedder.py              ← sentence-transformers model
+│       ├── vector_store.py          ← ChromaDB wrapper
+│       ├── bm25_index.py            ← rank-bm25 index (pickle-persisted)
+│       ├── hybrid_retriever.py      ← RRF fusion (semantic + BM25)
+│       └── reranker.py              ← cross-encoder scoring
+└── frontend/
+    ├── package.json
+    └── src/
+        ├── App.jsx
+        ├── api.js
+        └── components/
+            ├── ChatWindow.jsx
+            ├── DocumentUpload.jsx
+            ├── MCPTrace.jsx
+            └── RAGHealthDashboard.jsx
+```
+
+### Alternative: Document Parser (Docling)
+
+Docling is a document understanding library that handles PDF, DOCX, PPTX natively including tables and multi-column layouts:
+
+```python
+from docling.document_converter import DocumentConverter
+
+def parse_pdf_with_docling(file_path: str):
+    converter = DocumentConverter()
+    result = converter.convert(file_path)
+    # Exports with layout structure preserved
+    full_text = result.document.export_to_markdown()
+    return full_text
+```
+
+Compared to the current approach (pypdf + PyMuPDF + Gemini Vision), Docling runs entirely locally with no API calls for OCR but requires more disk space (~2GB for models).
+
+### Alternative: ChromaDB Vector Store
+
+```python
+import chromadb
+from sentence_transformers import SentenceTransformer
+
+model = SentenceTransformer("all-MiniLM-L6-v2")
+client = chromadb.PersistentClient(path="./storage/chroma_db")
+collection = client.get_or_create_collection("rag_docs", metadata={"hnsw:space": "cosine"})
+
+# Add chunks
+embeddings = model.encode([c["text"] for c in chunks]).tolist()
+collection.add(ids=[f"chunk_{i}" for i in range(len(chunks))],
+               embeddings=embeddings,
+               documents=[c["text"] for c in chunks])
+
+# Query
+results = collection.query(query_embeddings=[model.encode([query])[0].tolist()], n_results=10)
+```
+
+Compared to Neon pgvector: ChromaDB stores locally and requires no cloud account, but data is lost if the storage folder is deleted and it does not support SQL joins or full-text search in the same database.
+
+### Alternative: BM25 with rank-bm25
+
+```python
+from rank_bm25 import BM25Okapi
+
+def build_bm25_index(chunks):
+    tokenized = [chunk["text"].lower().split() for chunk in chunks]
+    return BM25Okapi(tokenized)
+
+def bm25_search(bm25, chunks, query, top_k=10):
+    scores = bm25.get_scores(query.lower().split())
+    ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:top_k]
+    return [{"chunk": chunks[i], "score": s} for i, s in ranked if s > 0]
+```
+
+Compared to the current `ts_rank` approach: `rank-bm25` runs in Python memory (no database round-trip) but the index is lost on restart and must be rebuilt. The current implementation stores BM25 state implicitly in the `tsvector` column which survives restarts.
+
+### Alternative: Cross-Encoder Reranker
+
+```python
+from sentence_transformers import CrossEncoder
+
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+def rerank(query, chunks, top_k=5):
+    pairs = [(query, c["text"]) for c in chunks]
+    scores = reranker.predict(pairs)
+    for c, s in zip(chunks, scores):
+        c["rerank_score"] = float(s)
+    return sorted(chunks, key=lambda x: x["rerank_score"], reverse=True)[:top_k]
+```
+
+A cross-encoder reads the query and chunk together (not separately like bi-encoders) so it captures more nuanced relevance. More accurate than embedding similarity alone, but ~10× slower, making it unsuitable for first-stage retrieval. Used only to re-score the top-20 candidates — same RRF fusion strategy as this project.
+
+### Alternative: RAGAS Library Evaluation
+
+```python
+from ragas import evaluate
+from ragas.metrics import faithfulness, answer_relevancy, context_precision
+from datasets import Dataset
+
+data = Dataset.from_dict({
+    "question": [question],
+    "answer": [answer],
+    "contexts": [context_chunks],
+})
+result = evaluate(data, metrics=[faithfulness, answer_relevancy, context_precision])
+# result["faithfulness"], result["answer_relevancy"], result["context_precision"]
+```
+
+Compared to the current approach (Gemini-as-judge with comma-separated scores): the RAGAS library calls an LLM internally (OpenAI by default, configurable) and runs multiple sub-prompts per metric. It is more standardised but requires an extra API key and adds latency. The current Gemini-based approach achieves the same three metrics in one API call.
+
+### Trade-offs Summary
+
+| Aspect | This Project | Alternative |
+|--------|-------------|-------------|
+| **API keys needed** | 2 (Gemini + Neon) | 1–2 (OpenAI + optional) |
+| **Cost at zero usage** | Neon free tier + Gemini free tier | Ollama = $0 (fully local) |
+| **Setup complexity** | Simple (`pip install`, one `.env`) | More complex (Node.js for React, HuggingFace model downloads ~500MB) |
+| **Persistence** | Cloud Neon DB survives restarts | ChromaDB file-based (must back up `storage/` folder) |
+| **Streaming answers** | Not implemented (full response) | SSE streaming token-by-token with React |
+| **OCR quality** | Gemini Vision (very high, cloud) | Docling (good, local, no API cost) |
+| **Reranking accuracy** | Gemini prompt (fast, 1 API call) | Cross-encoder (more accurate, local, slower) |
+| **Frontend build step** | None (open HTML directly) | `npm install && npm run dev` required |
