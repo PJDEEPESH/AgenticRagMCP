@@ -69,7 +69,7 @@ def _gemini_ocr_page(img_bytes: bytes, filename: str, page_num: int) -> str:
         from backend.config import settings
 
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
 
         image_part = {"mime_type": "image/png", "data": img_bytes}
         prompt = (
@@ -97,25 +97,30 @@ def parse_document(file_path: str, filename: str) -> List[str]:
             reader = PdfReader(file_path)
             scanned_pages: List[int] = []
 
+            # short_page_text keeps pypdf output for pages that are too short
+            # for direct use — used as fallback if OCR also fails.
+            short_page_text: dict = {}
+
             for page_num, page in enumerate(reader.pages, start=1):
                 text = page.extract_text() or ""
-                # Strip NUL bytes immediately — PostgreSQL rejects them
                 text = text.replace("\x00", "").strip()
                 alpha_chars = sum(1 for c in text if c.isalpha())
-                # Use pypdf text only if it is substantial (≥40 alpha chars AND
-                # ≥300 total chars). Short extractions usually mean pypdf only
-                # captured a footer/watermark and missed the real table content
-                # (e.g. government PDFs, form-based admit cards).
+                # Use pypdf text only when it is substantial (≥40 alpha chars
+                # AND ≥300 total chars). Shorter extractions usually mean pypdf
+                # captured only a footer/watermark and missed table content
+                # (e.g. government form PDFs, admit cards).
                 if text and alpha_chars >= 40 and len(text) >= 300:
                     tagged = f"[source: {filename} | page {page_num}]\n{text}"
                     chunks.append(tagged)
                 else:
                     scanned_pages.append(page_num)
+                    if text.strip():
+                        short_page_text[page_num] = text  # keep as fallback
 
-            # Fallback: use PyMuPDF to render scanned pages → Gemini Vision OCR
+            # Run Gemini Vision OCR on scanned / content-poor pages
             if scanned_pages:
                 logger.info(
-                    f"{filename}: {len(scanned_pages)} scanned page(s) — running Gemini Vision OCR"
+                    f"{filename}: {len(scanned_pages)} page(s) need OCR — running Gemini Vision"
                 )
                 try:
                     import fitz  # PyMuPDF
@@ -127,7 +132,6 @@ def parse_document(file_path: str, filename: str) -> List[str]:
                         img_bytes = pix.tobytes("png")
                         ocr_text = _gemini_ocr_page(img_bytes, filename, page_num)
                         if ocr_text:
-                            # Apply sliding window so long OCR pages get multiple chunks
                             windows = _sliding_window(ocr_text, size=500, overlap=80)
                             if not windows:
                                 windows = [ocr_text]
@@ -137,11 +141,20 @@ def parse_document(file_path: str, filename: str) -> List[str]:
                                     f"[source: {filename} | page {page_num} ({suffix})]\n{w}"
                                 )
                                 chunks.append(tagged)
+                        elif page_num in short_page_text:
+                            # OCR returned nothing — store the short pypdf text
+                            # so at least something is indexed for this page.
+                            tagged = f"[source: {filename} | page {page_num}]\n{short_page_text[page_num]}"
+                            chunks.append(tagged)
                     doc.close()
                 except ImportError:
                     logger.warning("PyMuPDF not installed — scanned PDF pages skipped.")
+                    for page_num, txt in short_page_text.items():
+                        chunks.append(f"[source: {filename} | page {page_num}]\n{txt}")
                 except Exception as e:
                     logger.error(f"PyMuPDF/OCR error for {filename}: {e}")
+                    for page_num, txt in short_page_text.items():
+                        chunks.append(f"[source: {filename} | page {page_num}]\n{txt}")
 
         # ── PPTX ──────────────────────────────────────────────────────────
         elif ext == "pptx":
